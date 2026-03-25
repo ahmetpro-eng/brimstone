@@ -1,43 +1,152 @@
 <!DOCTYPE html>
-<html>
+<html lang="tr">
 <head>
-    <title>Brimstone Survival</title>
-    <style>body { margin: 0; overflow: hidden; background: #000; }</style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Brimstone Akıllı Tahta Arena</title>
+    <style>
+        body { margin: 0; background: radial-gradient(circle, #1b2838 0%, #050505 100%); overflow: hidden; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+        canvas { display: block; }
+        #ui { position: absolute; top: 20px; left: 20px; color: #ff4655; font-size: 28px; font-weight: bold; text-shadow: 2px 2px #000; pointer-events: none; }
+        #loading { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: white; font-size: 20px; background: rgba(0,0,0,0.8); padding: 20px; border-radius: 10px; border: 2px solid #ff4655; }
+    </style>
 </head>
 <body>
+    <div id="ui">SKOR: <span id="score">0</span></div>
+    <div id="loading">Brimstone ve Düşmanlar Yükleniyor...</div>
+
     <script type="importmap">
-        { "imports": { "three": "https://unpkg.com/three@0.160.0/build/three.module.js", "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/" } }
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+                "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+            }
+        }
     </script>
+
     <script type="module">
         import * as THREE from 'three';
         import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
+        // --- SAHNE VE AYARLAR ---
         const scene = new THREE.Scene();
         const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
         const renderer = new THREE.WebGLRenderer({ antialias: true });
         renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(window.devicePixelRatio > 1 ? 1 : 1); // Akıllı tahta performansı için
+        renderer.toneMapping = THREE.ACESFilmicToneMapping;
         document.body.appendChild(renderer.domElement);
 
-        scene.add(new THREE.AmbientLight(0xffffff, 1));
-        const light = new THREE.DirectionalLight(0xffffff, 2);
-        light.position.set(5, 5, 5);
-        scene.add(light);
+        // Işıklandırma
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.8);
+        scene.add(ambientLight);
+        const sunLight = new THREE.DirectionalLight(0xffffff, 1.5);
+        sunLight.position.set(5, 10, 7);
+        scene.add(sunLight);
 
-        // MODEL YÜKLEME (Burayı güncelleyeceğiz)
+        // Değişkenler
+        let score = 0;
+        const enemies = [];
+        const bullets = [];
         const loader = new GLTFLoader();
-        const modelUrl = 'MODEL_LINKI_BURAYA'; 
 
-        loader.load(modelUrl, (gltf) => {
-            scene.add(gltf.scene);
-            gltf.scene.position.set(0, -1, -3);
+        // --- MODEL YÜKLEME ---
+        // Senin dosya ismin kalsın demiştin, aynen buraya yazdım:
+        const modelName = 'Meshy_AI_Brimstone_Alternativ_0325083143_texture.glb';
+
+        loader.load(modelName, (gltf) => {
+            const model = gltf.scene;
+            model.scale.set(1.5, 1.5, 1.5);
+            model.position.set(0, -1, 0);
+            scene.add(model);
+            document.getElementById('loading').style.display = 'none';
+        }, undefined, (error) => {
+            document.getElementById('loading').innerText = "Hata: Dosya bulunamadı!";
+            console.error(error);
         });
 
-        camera.position.z = 5;
+        camera.position.set(0, 1.5, 5);
 
+        // --- OYUN MANTIĞI ---
+
+        // Ateş Etme (Tıklama/Dokunma)
+        window.addEventListener('pointerdown', (event) => {
+            const bulletGeo = new THREE.SphereGeometry(0.1, 8, 8);
+            const bulletMat = new THREE.MeshBasicMaterial({ color: 0xffff00 });
+            const bullet = new THREE.Mesh(bulletGeo, bulletMat);
+            
+            bullet.position.set(0, 1, 0); // Brimstone'un göğüs hizasından çıksın
+            
+            // Merminin gideceği yönü belirle
+            const direction = new THREE.Vector3(0, 0, -1); 
+            bullet.userData.velocity = direction.multiplyScalar(0.4);
+            
+            scene.add(bullet);
+            bullets.push(bullet);
+        });
+
+        // Düşman Oluşturma
+        function spawnEnemy() {
+            const enemyGeo = new THREE.BoxGeometry(0.8, 1.5, 0.8);
+            const enemyMat = new THREE.MeshStandardMaterial({ color: 0xff4655, emissive: 0xff0000 });
+            const enemy = new THREE.Mesh(enemyGeo, enemyMat);
+            
+            enemy.position.set((Math.random() - 0.5) * 15, 0, -25);
+            scene.add(enemy);
+            enemies.push(enemy);
+        }
+        setInterval(spawnEnemy, 1500); // 1.5 saniyede bir düşman
+
+        // Ana Döngü (Update)
         function animate() {
             requestAnimationFrame(animate);
+
+            // Mermileri İlerlet
+            bullets.forEach((bullet, index) => {
+                bullet.position.add(bullet.userData.velocity);
+                if (bullet.position.z < -30) {
+                    scene.remove(bullet);
+                    bullets.splice(index, 1);
+                }
+            });
+
+            // Düşmanları İlerlet ve Çarpışma Kontrolü
+            enemies.forEach((enemy, eIndex) => {
+                enemy.position.z += 0.08; // Düşman hızı
+
+                // Mermi ile vuruldu mu?
+                bullets.forEach((bullet, bIndex) => {
+                    if (enemy.position.distanceTo(bullet.position) < 0.8) {
+                        scene.remove(enemy);
+                        enemies.splice(eIndex, 1);
+                        scene.remove(bullet);
+                        bullets.splice(bIndex, 1);
+                        
+                        score += 10;
+                        document.getElementById('score').innerText = score;
+                    }
+                });
+
+                // Oyun Kaybetme (Düşman dibine gelirse)
+                if (enemy.position.z > 5) {
+                    scene.remove(enemy);
+                    enemies.splice(eIndex, 1);
+                    score = Math.max(0, score - 5); // Puan düşür
+                    document.getElementById('score').innerText = score;
+                }
+            });
+
             renderer.render(scene, camera);
         }
+
+        // Pencere Boyutu Ayarı
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
         animate();
     </script>
 </body>
