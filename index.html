@@ -7,8 +7,8 @@
     <style>
         body { margin: 0; background: radial-gradient(circle, #1b2838 0%, #050505 100%); overflow: hidden; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
         canvas { display: block; }
-        #ui { position: absolute; top: 20px; left: 20px; color: #ff4655; font-size: 28px; font-weight: bold; text-shadow: 2px 2px #000; pointer-events: none; }
-        #loading { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: white; font-size: 20px; background: rgba(0,0,0,0.8); padding: 20px; border-radius: 10px; border: 2px solid #ff4655; }
+        #ui { position: absolute; top: 20px; left: 20px; color: #ff4655; font-size: 28px; font-weight: bold; text-shadow: 2px 2px #000; pointer-events: none; z-index: 10; }
+        #loading { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: white; font-size: 20px; background: rgba(0,0,0,0.8); padding: 20px; border-radius: 10px; border: 2px solid #ff4655; z-index: 20; }
     </style>
 </head>
 <body>
@@ -27,34 +27,28 @@
     <script type="module">
         import * as THREE from 'three';
         import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
-        // --- SAHNE VE AYARLAR ---
         const scene = new THREE.Scene();
         const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
         const renderer = new THREE.WebGLRenderer({ antialias: true });
         renderer.setSize(window.innerWidth, window.innerHeight);
-        renderer.setPixelRatio(window.devicePixelRatio > 1 ? 1 : 1); // Akıllı tahta performansı için
+        renderer.setPixelRatio(window.devicePixelRatio > 1 ? 1 : 1);
         renderer.toneMapping = THREE.ACESFilmicToneMapping;
         document.body.appendChild(renderer.domElement);
 
-        // Işıklandırma
-        const ambientLight = new THREE.AmbientLight(0xffffff, 0.8);
-        scene.add(ambientLight);
+        scene.add(new THREE.AmbientLight(0xffffff, 1));
         const sunLight = new THREE.DirectionalLight(0xffffff, 1.5);
         sunLight.position.set(5, 10, 7);
         scene.add(sunLight);
 
-        // Değişkenler
         let score = 0;
         const enemies = [];
         const bullets = [];
+
+        // --- DOSYA İSMİ GÜNCELLENDİ ---
+        const modelName = 'Meshy_AI_Brimstone_Alternativ_0325083301_texture.glb';
+
         const loader = new GLTFLoader();
-
-        // --- MODEL YÜKLEME ---
-        // Senin dosya ismin kalsın demiştin, aynen buraya yazdım:
-        const modelName = 'Meshy_AI_Brimstone_Alternativ_0325083143_texture.glb';
-
         loader.load(modelName, (gltf) => {
             const model = gltf.scene;
             model.scale.set(1.5, 1.5, 1.5);
@@ -62,77 +56,61 @@
             scene.add(model);
             document.getElementById('loading').style.display = 'none';
         }, undefined, (error) => {
-            document.getElementById('loading').innerText = "Hata: Dosya bulunamadı!";
+            document.getElementById('loading').innerText = "Hata: Dosya ismi uyuşmuyor!";
             console.error(error);
         });
 
         camera.position.set(0, 1.5, 5);
 
-        // --- OYUN MANTIĞI ---
-
-        // Ateş Etme (Tıklama/Dokunma)
-        window.addEventListener('pointerdown', (event) => {
-            const bulletGeo = new THREE.SphereGeometry(0.1, 8, 8);
-            const bulletMat = new THREE.MeshBasicMaterial({ color: 0xffff00 });
-            const bullet = new THREE.Mesh(bulletGeo, bulletMat);
-            
-            bullet.position.set(0, 1, 0); // Brimstone'un göğüs hizasından çıksın
-            
-            // Merminin gideceği yönü belirle
-            const direction = new THREE.Vector3(0, 0, -1); 
-            bullet.userData.velocity = direction.multiplyScalar(0.4);
-            
+        window.addEventListener('pointerdown', () => {
+            const bullet = new THREE.Mesh(
+                new THREE.SphereGeometry(0.1, 8, 8),
+                new THREE.MeshBasicMaterial({ color: 0xffff00 })
+            );
+            bullet.position.set(0, 1, 0);
+            bullet.userData.velocity = new THREE.Vector3(0, 0, -1).multiplyScalar(0.5);
             scene.add(bullet);
             bullets.push(bullet);
         });
 
-        // Düşman Oluşturma
         function spawnEnemy() {
-            const enemyGeo = new THREE.BoxGeometry(0.8, 1.5, 0.8);
-            const enemyMat = new THREE.MeshStandardMaterial({ color: 0xff4655, emissive: 0xff0000 });
-            const enemy = new THREE.Mesh(enemyGeo, enemyMat);
-            
+            const enemy = new THREE.Mesh(
+                new THREE.BoxGeometry(0.8, 1.5, 0.8),
+                new THREE.MeshStandardMaterial({ color: 0xff4655, emissive: 0xff0000 })
+            );
             enemy.position.set((Math.random() - 0.5) * 15, 0, -25);
             scene.add(enemy);
             enemies.push(enemy);
         }
-        setInterval(spawnEnemy, 1500); // 1.5 saniyede bir düşman
+        setInterval(spawnEnemy, 1500);
 
-        // Ana Döngü (Update)
         function animate() {
             requestAnimationFrame(animate);
 
-            // Mermileri İlerlet
-            bullets.forEach((bullet, index) => {
+            bullets.forEach((bullet, bIndex) => {
                 bullet.position.add(bullet.userData.velocity);
                 if (bullet.position.z < -30) {
                     scene.remove(bullet);
-                    bullets.splice(index, 1);
+                    bullets.splice(bIndex, 1);
                 }
             });
 
-            // Düşmanları İlerlet ve Çarpışma Kontrolü
             enemies.forEach((enemy, eIndex) => {
-                enemy.position.z += 0.08; // Düşman hızı
-
-                // Mermi ile vuruldu mu?
+                enemy.position.z += 0.08;
                 bullets.forEach((bullet, bIndex) => {
                     if (enemy.position.distanceTo(bullet.position) < 0.8) {
                         scene.remove(enemy);
                         enemies.splice(eIndex, 1);
                         scene.remove(bullet);
                         bullets.splice(bIndex, 1);
-                        
                         score += 10;
                         document.getElementById('score').innerText = score;
                     }
                 });
-
-                // Oyun Kaybetme (Düşman dibine gelirse)
                 if (enemy.position.z > 5) {
                     scene.remove(enemy);
                     enemies.splice(eIndex, 1);
-                    score = Math.max(0, score - 5); // Puan düşür
+                    score = Math.max(0, score - 5);
                     document.getElementById('score').innerText = score;
                 }
             });
@@ -140,7 +118,6 @@
             renderer.render(scene, camera);
         }
 
-        // Pencere Boyutu Ayarı
         window.addEventListener('resize', () => {
             camera.aspect = window.innerWidth / window.innerHeight;
             camera.updateProjectionMatrix();
