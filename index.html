@@ -2,18 +2,21 @@
 <html lang="tr">
 <head>
     <meta charset="UTF-8">
-    <title>Brimstone FPS Arena</title>
+    <title>Brimstone Mobile/Touch FPS</title>
     <style>
-        body { margin: 0; background: #000; overflow: hidden; font-family: sans-serif; }
-        #ui { position: absolute; top: 20px; left: 20px; color: #ff4655; font-size: 28px; font-weight: bold; z-index: 10; }
-        #crosshair { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: #00ff00; font-size: 24px; pointer-events: none; z-index: 10; }
-        #instructions { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: white; background: rgba(0,0,0,0.7); padding: 20px; text-align: center; border: 2px solid #ff4655; cursor: pointer; }
+        body { margin: 0; background: #000; overflow: hidden; touch-action: none; font-family: sans-serif; }
+        #ui { position: absolute; top: 20px; left: 20px; color: #ff4655; font-size: 24px; font-weight: bold; pointer-events: none; }
+        #crosshair { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: #00ff00; font-size: 30px; pointer-events: none; }
+        .joystick { position: absolute; bottom: 50px; width: 100px; height: 100px; background: rgba(255,255,255,0.2); border-radius: 50%; border: 2px solid #fff; }
+        #move-joy { left: 50px; } /* Sol el hareket */
+        #look-joy { right: 50px; } /* Sağ el bakış ve ateş */
     </style>
 </head>
 <body>
     <div id="ui">SKOR: <span id="score">0</span></div>
     <div id="crosshair">+</div>
-    <div id="instructions"><h1>OYUNA BAŞLA</h1><p>WASD: Hareket | Mouse: Bakış | Tıkla: Ateş Et</p></div>
+    <div id="move-joy" class="joystick"></div>
+    <div id="look-joy" class="joystick"></div>
 
     <script type="importmap">
         { "imports": { "three": "https://unpkg.com/three@0.160.0/build/three.module.js", "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/" } }
@@ -21,129 +24,109 @@
 
     <script type="module">
         import * as THREE from 'three';
-        import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js';
+        import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 
-        // --- SAHNE KURULUMU ---
         const scene = new THREE.Scene();
-        scene.background = new THREE.Color(0x101010);
-        scene.fog = new THREE.Fog(0x101010, 0, 50);
-
+        scene.background = new THREE.Color(0x111111);
         const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
         const renderer = new THREE.WebGLRenderer({ antialias: true });
         renderer.setSize(window.innerWidth, window.innerHeight);
         document.body.appendChild(renderer.domElement);
 
-        const controls = new PointerLockControls(camera, document.body);
-        const instructions = document.getElementById('instructions');
+        scene.add(new THREE.AmbientLight(0xffffff, 1));
+        const sun = new THREE.DirectionalLight(0xffffff, 1.5);
+        sun.position.set(5, 10, 5);
+        scene.add(sun);
 
-        instructions.addEventListener('click', () => { controls.lock(); });
-        controls.addEventListener('lock', () => { instructions.style.display = 'none'; });
-        controls.addEventListener('unlock', () => { instructions.style.display = 'block'; });
+        // Zemin
+        const grid = new THREE.GridHelper(100, 50, 0xff4655, 0x444444);
+        scene.add(grid);
 
-        // --- IŞIKLANDIRMA ---
-        scene.add(new THREE.AmbientLight(0xffffff, 0.5));
-        const dirLight = new THREE.DirectionalLight(0xffffff, 1);
-        dirLight.position.set(10, 10, 10);
-        scene.add(dirLight);
-
-        // --- YER (ZEMİN) ---
-        const floor = new THREE.Mesh(
-            new THREE.PlaneGeometry(100, 100),
-            new THREE.MeshStandardMaterial({ color: 0x222222 })
-        );
-        floor.rotation.x = -Math.PI / 2;
-        scene.add(floor);
-
-        // --- DEĞİŞKENLER ---
         let score = 0;
         const enemies = [];
         const bullets = [];
-        const move = { f: false, b: false, l: false, r: false };
-        const velocity = new THREE.Vector3();
-        const direction = new THREE.Vector3();
+        let brimstoneMasterModel = null;
 
-        // --- KONTROLLER ---
-        document.addEventListener('keydown', (e) => {
-            if(e.code === 'KeyW') move.f = true;
-            if(e.code === 'KeyS') move.b = true;
-            if(e.code === 'KeyA') move.l = true;
-            if(e.code === 'KeyD') move.r = true;
-        });
-        document.addEventListener('keyup', (e) => {
-            if(e.code === 'KeyW') move.f = false;
-            if(e.code === 'KeyS') move.b = false;
-            if(e.code === 'KeyA') move.l = false;
-            if(e.code === 'KeyD') move.r = false;
+        // --- MODELİ YÜKLE ---
+        const loader = new GLTFLoader();
+        const modelUrl = 'Meshy_AI_Brimstone_Alternativ_0325083301_texture.glb';
+
+        loader.load(modelUrl, (gltf) => {
+            brimstoneMasterModel = gltf.scene;
+            brimstoneMasterModel.scale.set(1.2, 1.2, 1.2);
+            // İlk düşmanları oluştur
+            for(let i=0; i<5; i++) spawnEnemy();
         });
 
-        // --- ATEŞ ETME ---
-        window.addEventListener('mousedown', () => {
-            if (!controls.isLocked) return;
-            const bullet = new THREE.Mesh(
-                new THREE.SphereGeometry(0.05),
-                new THREE.MeshBasicMaterial({ color: 0xffff00 })
-            );
-            bullet.position.copy(camera.position);
-            const vector = new THREE.Vector3(0, 0, -1);
-            vector.applyQuaternion(camera.quaternion);
-            bullet.userData.velocity = vector.multiplyScalar(1.0);
-            scene.add(bullet);
-            bullets.push(bullet);
-        });
-
-        // --- DÜŞMAN (KUTU) SPAWN ---
         function spawnEnemy() {
-            const enemy = new THREE.Mesh(
-                new THREE.BoxGeometry(1, 2, 1),
-                new THREE.MeshStandardMaterial({ color: 0xff4655, emissive: 0x330000 })
-            );
-            const x = (Math.random() - 0.5) * 40;
-            const z = (Math.random() - 0.5) * 40;
-            enemy.position.set(x, 1, z);
+            if(!brimstoneMasterModel) return;
+            const enemy = brimstoneMasterModel.clone();
+            enemy.position.set((Math.random()-0.5)*30, 0, (Math.random()-0.5)*30);
             scene.add(enemy);
             enemies.push(enemy);
         }
-        for(let i=0; i<15; i++) spawnEnemy();
 
-        // --- ANA DÖNGÜ ---
-        let prevTime = performance.now();
+        // --- DOKUNMATİK KONTROLLER ---
+        let moveData = { x: 0, y: 0 };
+        let lookData = { x: 0, y: 0 };
+        let rotationY = 0;
+        let rotationX = 0;
+
+        // Sol Joystick (Hareket)
+        document.getElementById('move-joy').addEventListener('touchmove', (e) => {
+            const touch = e.touches[0];
+            const rect = e.target.getBoundingClientRect();
+            moveData.x = (touch.clientX - rect.left - 50) / 50;
+            moveData.y = (touch.clientY - rect.top - 50) / 50;
+        });
+        document.getElementById('move-joy').addEventListener('touchend', () => moveData = { x: 0, y: 0 });
+
+        // Sağ Joystick (Bakış + Ateş)
+        document.getElementById('look-joy').addEventListener('touchstart', shoot);
+        document.getElementById('look-joy').addEventListener('touchmove', (e) => {
+            const touch = e.touches[0];
+            const rect = e.target.getBoundingClientRect();
+            rotationY -= (touch.clientX - (rect.left + 50)) * 0.001;
+            rotationX -= (touch.clientY - (rect.top + 50)) * 0.001;
+        });
+
+        function shoot() {
+            const bullet = new THREE.Mesh(new THREE.SphereGeometry(0.1), new THREE.MeshBasicMaterial({color: 0xffff00}));
+            bullet.position.copy(camera.position);
+            const dir = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
+            bullet.userData.velocity = dir.multiplyScalar(0.8);
+            scene.add(bullet);
+            bullets.push(bullet);
+        }
+
         function animate() {
             requestAnimationFrame(animate);
-            const time = performance.now();
-            const delta = (time - prevTime) / 1000;
 
-            if (controls.isLocked) {
-                velocity.x -= velocity.x * 10.0 * delta;
-                velocity.z -= velocity.z * 10.0 * delta;
+            // Hareket
+            const moveDir = new THREE.Vector3(moveData.x, 0, moveData.y).applyQuaternion(camera.quaternion);
+            camera.position.add(moveDir.multiplyScalar(-0.1));
+            camera.position.y = 1.6; // Boy hizası
 
-                direction.z = Number(move.f) - Number(move.b);
-                direction.x = Number(move.r) - Number(move.l);
-                direction.normalize();
+            // Bakış
+            camera.rotation.order = 'YXZ';
+            camera.rotation.y = rotationY;
+            camera.rotation.x = Math.max(-1.5, Math.min(1.5, rotationX));
 
-                if (move.f || move.b) velocity.z -= direction.z * 100.0 * delta;
-                if (move.l || move.r) velocity.x -= direction.x * 100.0 * delta;
-
-                controls.moveRight(-velocity.x * delta);
-                controls.moveForward(-velocity.z * delta);
-            }
-
-            // Mermileri ilerlet ve vurulma kontrolü
+            // Mermiler ve Vurulma
             bullets.forEach((b, bi) => {
                 b.position.add(b.userData.velocity);
                 enemies.forEach((e, ei) => {
-                    if(b.position.distanceTo(e.position) < 1.2) {
+                    if(b.position.distanceTo(e.position.clone().add(new THREE.Vector3(0,1,0))) < 1) {
                         scene.remove(e); enemies.splice(ei, 1);
                         scene.remove(b); bullets.splice(bi, 1);
                         score += 10;
                         document.getElementById('score').innerText = score;
-                        spawnEnemy(); // Yeni düşman gelsin
+                        spawnEnemy();
                     }
                 });
-                if(b.position.length() > 100) { scene.remove(b); bullets.splice(bi, 1); }
             });
 
             renderer.render(scene, camera);
-            prevTime = time;
         }
         animate();
     </script>
