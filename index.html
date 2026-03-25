@@ -2,128 +2,149 @@
 <html lang="tr">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Brimstone Akıllı Tahta Arena</title>
+    <title>Brimstone FPS Arena</title>
     <style>
-        body { margin: 0; background: radial-gradient(circle, #1b2838 0%, #050505 100%); overflow: hidden; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
-        canvas { display: block; }
-        #ui { position: absolute; top: 20px; left: 20px; color: #ff4655; font-size: 28px; font-weight: bold; text-shadow: 2px 2px #000; pointer-events: none; z-index: 10; }
-        #loading { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: white; font-size: 20px; background: rgba(0,0,0,0.8); padding: 20px; border-radius: 10px; border: 2px solid #ff4655; z-index: 20; }
+        body { margin: 0; background: #000; overflow: hidden; font-family: sans-serif; }
+        #ui { position: absolute; top: 20px; left: 20px; color: #ff4655; font-size: 28px; font-weight: bold; z-index: 10; }
+        #crosshair { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: #00ff00; font-size: 24px; pointer-events: none; z-index: 10; }
+        #instructions { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: white; background: rgba(0,0,0,0.7); padding: 20px; text-align: center; border: 2px solid #ff4655; cursor: pointer; }
     </style>
 </head>
 <body>
     <div id="ui">SKOR: <span id="score">0</span></div>
-    <div id="loading">Brimstone ve Düşmanlar Yükleniyor...</div>
+    <div id="crosshair">+</div>
+    <div id="instructions"><h1>OYUNA BAŞLA</h1><p>WASD: Hareket | Mouse: Bakış | Tıkla: Ateş Et</p></div>
 
     <script type="importmap">
-        {
-            "imports": {
-                "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
-                "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
-            }
-        }
+        { "imports": { "three": "https://unpkg.com/three@0.160.0/build/three.module.js", "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/" } }
     </script>
 
     <script type="module">
         import * as THREE from 'three';
-        import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+        import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js';
 
+        // --- SAHNE KURULUMU ---
         const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x101010);
+        scene.fog = new THREE.Fog(0x101010, 0, 50);
+
         const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
         const renderer = new THREE.WebGLRenderer({ antialias: true });
         renderer.setSize(window.innerWidth, window.innerHeight);
-        renderer.setPixelRatio(window.devicePixelRatio > 1 ? 1 : 1);
-        renderer.toneMapping = THREE.ACESFilmicToneMapping;
         document.body.appendChild(renderer.domElement);
 
-        scene.add(new THREE.AmbientLight(0xffffff, 1));
-        const sunLight = new THREE.DirectionalLight(0xffffff, 1.5);
-        sunLight.position.set(5, 10, 7);
-        scene.add(sunLight);
+        const controls = new PointerLockControls(camera, document.body);
+        const instructions = document.getElementById('instructions');
 
+        instructions.addEventListener('click', () => { controls.lock(); });
+        controls.addEventListener('lock', () => { instructions.style.display = 'none'; });
+        controls.addEventListener('unlock', () => { instructions.style.display = 'block'; });
+
+        // --- IŞIKLANDIRMA ---
+        scene.add(new THREE.AmbientLight(0xffffff, 0.5));
+        const dirLight = new THREE.DirectionalLight(0xffffff, 1);
+        dirLight.position.set(10, 10, 10);
+        scene.add(dirLight);
+
+        // --- YER (ZEMİN) ---
+        const floor = new THREE.Mesh(
+            new THREE.PlaneGeometry(100, 100),
+            new THREE.MeshStandardMaterial({ color: 0x222222 })
+        );
+        floor.rotation.x = -Math.PI / 2;
+        scene.add(floor);
+
+        // --- DEĞİŞKENLER ---
         let score = 0;
         const enemies = [];
         const bullets = [];
+        const move = { f: false, b: false, l: false, r: false };
+        const velocity = new THREE.Vector3();
+        const direction = new THREE.Vector3();
 
-        // --- DOSYA İSMİ GÜNCELLENDİ ---
-        const modelName = 'Meshy_AI_Brimstone_Alternativ_0325083301_texture.glb';
-
-        const loader = new GLTFLoader();
-        loader.load(modelName, (gltf) => {
-            const model = gltf.scene;
-            model.scale.set(1.5, 1.5, 1.5);
-            model.position.set(0, -1, 0);
-            scene.add(model);
-            document.getElementById('loading').style.display = 'none';
-        }, undefined, (error) => {
-            document.getElementById('loading').innerText = "Hata: Dosya ismi uyuşmuyor!";
-            console.error(error);
+        // --- KONTROLLER ---
+        document.addEventListener('keydown', (e) => {
+            if(e.code === 'KeyW') move.f = true;
+            if(e.code === 'KeyS') move.b = true;
+            if(e.code === 'KeyA') move.l = true;
+            if(e.code === 'KeyD') move.r = true;
+        });
+        document.addEventListener('keyup', (e) => {
+            if(e.code === 'KeyW') move.f = false;
+            if(e.code === 'KeyS') move.b = false;
+            if(e.code === 'KeyA') move.l = false;
+            if(e.code === 'KeyD') move.r = false;
         });
 
-        camera.position.set(0, 1.5, 5);
-
-        window.addEventListener('pointerdown', () => {
+        // --- ATEŞ ETME ---
+        window.addEventListener('mousedown', () => {
+            if (!controls.isLocked) return;
             const bullet = new THREE.Mesh(
-                new THREE.SphereGeometry(0.1, 8, 8),
+                new THREE.SphereGeometry(0.05),
                 new THREE.MeshBasicMaterial({ color: 0xffff00 })
             );
-            bullet.position.set(0, 1, 0);
-            bullet.userData.velocity = new THREE.Vector3(0, 0, -1).multiplyScalar(0.5);
+            bullet.position.copy(camera.position);
+            const vector = new THREE.Vector3(0, 0, -1);
+            vector.applyQuaternion(camera.quaternion);
+            bullet.userData.velocity = vector.multiplyScalar(1.0);
             scene.add(bullet);
             bullets.push(bullet);
         });
 
+        // --- DÜŞMAN (KUTU) SPAWN ---
         function spawnEnemy() {
             const enemy = new THREE.Mesh(
-                new THREE.BoxGeometry(0.8, 1.5, 0.8),
-                new THREE.MeshStandardMaterial({ color: 0xff4655, emissive: 0xff0000 })
+                new THREE.BoxGeometry(1, 2, 1),
+                new THREE.MeshStandardMaterial({ color: 0xff4655, emissive: 0x330000 })
             );
-            enemy.position.set((Math.random() - 0.5) * 15, 0, -25);
+            const x = (Math.random() - 0.5) * 40;
+            const z = (Math.random() - 0.5) * 40;
+            enemy.position.set(x, 1, z);
             scene.add(enemy);
             enemies.push(enemy);
         }
-        setInterval(spawnEnemy, 1500);
+        for(let i=0; i<15; i++) spawnEnemy();
 
+        // --- ANA DÖNGÜ ---
+        let prevTime = performance.now();
         function animate() {
             requestAnimationFrame(animate);
+            const time = performance.now();
+            const delta = (time - prevTime) / 1000;
 
-            bullets.forEach((bullet, bIndex) => {
-                bullet.position.add(bullet.userData.velocity);
-                if (bullet.position.z < -30) {
-                    scene.remove(bullet);
-                    bullets.splice(bIndex, 1);
-                }
-            });
+            if (controls.isLocked) {
+                velocity.x -= velocity.x * 10.0 * delta;
+                velocity.z -= velocity.z * 10.0 * delta;
 
-            enemies.forEach((enemy, eIndex) => {
-                enemy.position.z += 0.08;
-                bullets.forEach((bullet, bIndex) => {
-                    if (enemy.position.distanceTo(bullet.position) < 0.8) {
-                        scene.remove(enemy);
-                        enemies.splice(eIndex, 1);
-                        scene.remove(bullet);
-                        bullets.splice(bIndex, 1);
+                direction.z = Number(move.f) - Number(move.b);
+                direction.x = Number(move.r) - Number(move.l);
+                direction.normalize();
+
+                if (move.f || move.b) velocity.z -= direction.z * 100.0 * delta;
+                if (move.l || move.r) velocity.x -= direction.x * 100.0 * delta;
+
+                controls.moveRight(-velocity.x * delta);
+                controls.moveForward(-velocity.z * delta);
+            }
+
+            // Mermileri ilerlet ve vurulma kontrolü
+            bullets.forEach((b, bi) => {
+                b.position.add(b.userData.velocity);
+                enemies.forEach((e, ei) => {
+                    if(b.position.distanceTo(e.position) < 1.2) {
+                        scene.remove(e); enemies.splice(ei, 1);
+                        scene.remove(b); bullets.splice(bi, 1);
                         score += 10;
                         document.getElementById('score').innerText = score;
+                        spawnEnemy(); // Yeni düşman gelsin
                     }
                 });
-                if (enemy.position.z > 5) {
-                    scene.remove(enemy);
-                    enemies.splice(eIndex, 1);
-                    score = Math.max(0, score - 5);
-                    document.getElementById('score').innerText = score;
-                }
+                if(b.position.length() > 100) { scene.remove(b); bullets.splice(bi, 1); }
             });
 
             renderer.render(scene, camera);
+            prevTime = time;
         }
-
-        window.addEventListener('resize', () => {
-            camera.aspect = window.innerWidth / window.innerHeight;
-            camera.updateProjectionMatrix();
-            renderer.setSize(window.innerWidth, window.innerHeight);
-        });
-
         animate();
     </script>
 </body>
