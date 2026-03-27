@@ -2,7 +2,7 @@
 <html lang="tr">
 <head>
     <meta charset="UTF-8">
-    <title>Brimstone Survival FPS</title>
+    <title>Brimstone Hücumu FPS</title>
     <style>
         body { margin: 0; background: #000; overflow: hidden; touch-action: none; font-family: sans-serif; user-select: none; }
         #ui { position: absolute; top: 20px; left: 20px; color: #ff4655; font-size: 24px; font-weight: bold; z-index: 10; text-shadow: 2px 2px #000; }
@@ -10,15 +10,12 @@
         .joystick { position: absolute; bottom: 50px; width: 100px; height: 100px; background: rgba(255,255,255,0.1); border-radius: 50%; border: 2px solid #fff; z-index: 5; }
         #move-joy { left: 40px; } 
         #look-joy { right: 40px; }
-        #run-btn { position: absolute; bottom: 160px; left: 60px; width: 60px; height: 60px; background: rgba(255,70,85,0.3); border-radius: 50%; border: 2px solid #ff4655; color: white; display: flex; align-items: center; justify-content: center; font-weight: bold; z-index: 6; }
-        #run-btn.active { background: #ff4655; box-shadow: 0 0 15px #ff4655; }
     </style>
 </head>
 <body>
     <div id="ui">SKOR: <span id="score">0</span></div>
     <div id="crosshair">+</div>
     <div id="move-joy" class="joystick"></div>
-    <div id="run-btn">KOŞ</div>
     <div id="look-joy" class="joystick"></div>
 
     <script type="importmap">
@@ -50,13 +47,13 @@
         let masterAnims = [];
 
         const loader = new GLTFLoader();
-        // Meshy'den indirdiğin dosya ismiyle burayı güncelle kanka
+        // Dosya ismin aynen duruyor
         const modelUrl = 'Meshy_AI_Brimstone_Alternativ_0325083301_texture.glb';
 
         loader.load(modelUrl, (gltf) => {
             masterModel = gltf.scene;
             masterAnims = gltf.animations; 
-            for(let i=0; i<6; i++) spawnEnemy();
+            for(let i=0; i<8; i++) spawnEnemy(); // Sayıyı 8'e çıkardım, daha kalabalık gelsinler
         });
 
         function spawnEnemy() {
@@ -64,26 +61,26 @@
             const eScene = masterModel.clone();
             const mixer = new THREE.AnimationMixer(eScene);
             
-            // Meshy'den gelen ilk animasyonu (genelde idle/bekleme) oynat
-            if(masterAnims.length > 0) {
+            // DİREKT KOŞMA ANİMASYONU İLE BAŞLAT
+            // Meshy dosyalarında genelde 1. index koşma/yürümedir.
+            if(masterAnims.length > 1) {
+                mixer.clipAction(masterAnims[1]).play();
+            } else if(masterAnims.length > 0) {
                 mixer.clipAction(masterAnims[0]).play();
             }
 
             const angle = Math.random() * Math.PI * 2;
-            const dist = 25 + Math.random() * 20;
+            const dist = 30 + Math.random() * 20; // Biraz daha uzaktan doğsunlar ki koşacak vakitleri olsun
             eScene.position.set(Math.cos(angle)*dist, 0, Math.sin(angle)*dist);
             eScene.scale.set(1.5, 1.5, 1.5);
             
             scene.add(eScene);
-            enemies.push({ scene: eScene, mixer: mixer, state: 'idle' });
+            enemies.push({ scene: eScene, mixer: mixer });
         }
 
-        let moveData = { x: 0, y: 0 }, rotY = 0, rotX = 0, isRunning = false;
+        let moveData = { x: 0, y: 0 }, rotY = 0, rotX = 0;
 
-        // Kontroller
-        document.getElementById('run-btn').addEventListener('touchstart', (e) => { e.preventDefault(); isRunning = true; e.target.classList.add('active'); });
-        document.getElementById('run-btn').addEventListener('touchend', (e) => { isRunning = false; e.target.classList.remove('active'); });
-
+        // Joystick Kontrolleri
         document.getElementById('move-joy').addEventListener('touchmove', (e) => {
             const r = e.target.getBoundingClientRect();
             moveData.x = (e.touches[0].clientX - (r.left + 50)) / 50;
@@ -102,7 +99,7 @@
             const b = new THREE.Mesh(new THREE.SphereGeometry(0.15), new THREE.MeshBasicMaterial({color: 0xffff00}));
             b.position.copy(camera.position).y -= 0.2;
             const dir = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
-            b.userData.vel = dir.multiplyScalar(1.5);
+            b.userData.vel = dir.multiplyScalar(1.5); // Mermi hızı
             scene.add(b);
             bullets.push(b);
         }
@@ -112,40 +109,32 @@
             requestAnimationFrame(animate);
             const dt = clock.getDelta();
 
-            // Oyuncu Hareketi (Koşma butonu hızı 2 katına çıkarır)
-            const speed = isRunning ? 0.4 : 0.15;
+            // Senin Sabit Hızın
+            const playerSpeed = 0.2;
             const mDir = new THREE.Vector3(moveData.x, 0, moveData.y).applyQuaternion(camera.quaternion);
-            camera.position.x += mDir.x * -speed;
-            camera.position.z += mDir.z * -speed;
+            camera.position.x += mDir.x * -playerSpeed;
+            camera.position.z += mDir.z * -playerSpeed;
             camera.position.y = 1.8;
 
             camera.rotation.order = 'YXZ';
             camera.rotation.y = rotY;
             camera.rotation.x = Math.max(-1.4, Math.min(1.4, rotX));
 
-            // Düşman Takibi
+            // Brimstone'ların Koşusu
             enemies.forEach((e) => {
                 if(e.mixer) e.mixer.update(dt);
                 const toP = new THREE.Vector3().subVectors(camera.position, e.scene.position);
                 toP.y = 0;
-                const dist = toP.length();
                 toP.normalize();
 
-                // Sana yaklaştıkça hızlanırlar
-                const eSpeed = dist < 15 ? 0.09 : 0.04;
+                // ÜZERİNE KOŞMA HIZLARI (Eskiden 0.04'tü, şimdi iki katı)
+                const enemyRunSpeed = 0.09; 
                 
-                // Meshy dosyasında 2. bir animasyon (koşma) varsa onu tetikle
-                if(dist < 15 && e.state === 'idle' && masterAnims.length > 1) {
-                    e.mixer.stopAllAction();
-                    e.mixer.clipAction(masterAnims[1]).play();
-                    e.state = 'run';
-                }
-
-                e.scene.position.add(toP.multiplyScalar(eSpeed));
+                e.scene.position.add(toP.multiplyScalar(enemyRunSpeed));
                 e.scene.lookAt(camera.position.x, 0, camera.position.z);
             });
 
-            // Vurulma Kontrolü
+            // Mermi Çarpışma Kontrolü
             bullets.forEach((b, bi) => {
                 b.position.add(b.userData.vel);
                 enemies.forEach((e, ei) => {
@@ -154,7 +143,7 @@
                         scene.remove(e.scene); enemies.splice(ei, 1);
                         scene.remove(b); bullets.splice(bi, 1);
                         score += 10; document.getElementById('score').innerText = score;
-                        spawnEnemy();
+                        spawnEnemy(); // Vurulanın yerine yenisi uzaktan depar atmaya başlasın
                     }
                 });
             });
