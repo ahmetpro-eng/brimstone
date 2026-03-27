@@ -2,7 +2,7 @@
 <html lang="tr">
 <head>
     <meta charset="UTF-8">
-    <title>Brimstone Hunter FPS</title>
+    <title>Brimstone Hücumu FPS</title>
     <style>
         body { margin: 0; background: #000; overflow: hidden; touch-action: none; font-family: sans-serif; user-select: none; }
         #ui { position: absolute; top: 20px; left: 20px; color: #ff4655; font-size: 24px; font-weight: bold; z-index: 10; text-shadow: 2px 2px #000; }
@@ -46,9 +46,8 @@
         const bullets = [];
         let masterModel = null;
 
-        // --- MODEL YÜKLEME ---
+        // --- MODEL YÜKLEME VE STABİLİZASYON ---
         const loader = new GLTFLoader();
-        // Dosya ismin aynen duruyor
         const modelUrl = 'Meshy_AI_Brimstone_Alternativ_0325083301_texture.glb';
 
         loader.load(modelUrl, (gltf) => {
@@ -58,22 +57,32 @@
 
         function spawnEnemy() {
             if(!masterModel) return;
-            const enemy = masterModel.clone();
             
-            // Rastgele zıplama ritmi (hepsi aynı anda zıplamasın)
-            enemy.userData.bobOffset = Math.random() * Math.PI * 2;
+            // --- KONTEYNER GRUBU OLUŞTURMA (KESİN ÇÖZÜM) ---
+            const enemyContainer = new THREE.Group();
+            
+            // Asıl Mesh modelini klonla ve konteynerin içine koy
+            const meshModel = masterModel.clone();
+            enemyContainer.add(meshModel);
 
-            // --- TERS MODEL DÜZELTMESİ (KRİTİK!) ---
-            // Modeli X ekseninde 180 derece döndürerek ayaklarının üzerine bastırıyoruz.
-            enemy.rotation.x = Math.PI; 
+            // Rastgele zıplama ritmi (hepsi aynı anda zıplamasın)
+            enemyContainer.userData.bobOffset = Math.random() * Math.PI * 2;
+
+            // --- LOKAL DÜZELTME ROTASYONU (DENE-YANILMA SABİTLEMESİ) ---
+            // Model Meshy'den "Ters" veya "Yan" geldiyse, sadece lokal MESH'i konteyner içinde döndürüyoruz.
+            
+            // Eğer hala ters veya yan duruyorlarsa, sadece bu satırları dene-yanılma ile değiştir kanka:
+            meshModel.rotation.x = Math.PI; // Tepetaklak ise bunu dene
+            // meshModel.rotation.z = Math.PI / 2; // Yan gelip yatmış ise bunu dene
+            // meshModel.rotation.y = Math.PI; // Sana doğru bakmıyorlarsa bunu dene
             
             const angle = Math.random() * Math.PI * 2;
             const dist = 30 + Math.random() * 20;
-            enemy.position.set(Math.cos(angle)*dist, 0, Math.sin(angle)*dist);
-            enemy.scale.set(1.5, 1.5, 1.5);
+            enemyContainer.position.set(Math.cos(angle)*dist, 0, Math.sin(angle)*dist);
+            enemyContainer.scale.set(1.5, 1.5, 1.5); // Ölçeği konteynere uyguluyoruz
             
-            scene.add(enemy);
-            enemies.push(enemy);
+            scene.add(enemyContainer);
+            enemies.push(enemyContainer);
         }
 
         // --- DOKUNMATİK KONTROLLER ---
@@ -120,7 +129,7 @@
             camera.rotation.y = rotY;
             camera.rotation.x = Math.max(-1.4, Math.min(1.4, rotX));
 
-            // Düşman Takibi ve YAPAY KOŞMA (T-Pose Düzeltmesi)
+            // Düşman Takibi ve YAPAY KOŞMA (T-Pose ve Eksen Düzeltmesi)
             enemies.forEach((enemy) => {
                 const toP = new THREE.Vector3().subVectors(camera.position, enemy.position);
                 toP.y = 0;
@@ -131,17 +140,16 @@
                 enemy.position.z += toP.z * enemyRunSpeed;
                 
                 // --- BAKIŞ DÜZELTMESİ (KRİTİK!) ---
-                // Model X ekseninde döndüğü için, lookAt() fonksiyonunu 
-                // X eksenine göre düzeltmemiz gerekiyor.
-                const targetPoint = new THREE.Vector3(camera.position.x, 0, camera.position.z);
-                enemy.lookAt(targetPoint);
-                enemy.rotateX(Math.PI); // Modelin 'ters' bakmasını engellemek için tekrar döndür
+                // lookAt fonksiyonunu KONTEYNER'e uyguluyoruz.
+                enemy.lookAt(camera.position.x, 0, camera.position.z);
 
-                // --- YAPAY KOŞMA EFEKTİ (Minecraft Zombisi Modu) ---
-                // Hızlı bir şekilde aşağı yukarı sekerler (Zıplama)
+                // --- YAPAY KOŞMA EFEKTİ (YAPISAL KOŞU MODU) ---
+                // Mikser veya animasyon dosyası olmadan Matematiksel Zıplama
                 enemy.position.y = Math.abs(Math.sin(time * 15 + enemy.userData.bobOffset)) * 0.5;
-                // Koşarken omuzları sağa sola yatsın (Sallanma)
-                enemy.rotation.z = Math.sin(time * 7.5 + enemy.userData.bobOffset) * 0.15;
+                
+                // Sağa sola hafif sallanma (omuz hareketi gibi)
+                // Bu kod KONTEYNER'i döndürdüğü için lokal Mesh'i bozmaz.
+                enemy.rotateZ(Math.sin(time * 7.5 + enemy.userData.bobOffset) * 0.15);
             });
 
             // Mermi ve Vurulma
